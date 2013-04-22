@@ -1,30 +1,83 @@
+//This is the main function that will define global variables and reset Google triggers that will run the other functions
 function start() {
 	// REPLACE THESE DUMMY VALUES
-	var TWITTER_CONSUMER_KEY = "-";
-	var TWITTER_CONSUMER_SECRET = "-";
+	var TWITTER_CONSUMER_KEY = "";
+	var TWITTER_CONSUMER_SECRET = "";
 	var TWITTER_HANDLE = "a5tabot";
+	var TWITTER_TARGET_HANDLE = "BuFai7an";
+	var TWITTER_TARGET_HASHTAG = "#خرب_هاشتاقهم";
+	var i = 0;
 	
-	// DO NOT CHANGE ANYTHING BELOW THIS LINE
+	// Be Careful changing anything below this line
 	ScriptProperties.setProperty("TWITTER_CONSUMER_KEY", TWITTER_CONSUMER_KEY);
 	ScriptProperties.setProperty("TWITTER_CONSUMER_SECRET", TWITTER_CONSUMER_SECRET);
 	ScriptProperties.setProperty("TWITTER_HANDLE", TWITTER_HANDLE);
+	ScriptProperties.setProperty("TWITTER_TARGET_HANDLE", TWITTER_TARGET_HANDLE);
+	ScriptProperties.setProperty("TWITTER_TARGET_HASHTAG", TWITTER_TARGET_HASHTAG);
 	ScriptProperties.setProperty("MAX_TWITTER_ID", 0);
 	
 	// Delete exiting triggers, if any
 	var triggers = ScriptApp.getScriptTriggers();
-	for(var i=0; i < triggers.length; i++) {
+	for (i; i < triggers.length; i++) {
 		ScriptApp.deleteTrigger(triggers[i]);
 	}
 	
 	//Add a trigger
 	ScriptApp.newTrigger("follow_followers_back").timeBased().everyMinutes(1).create();
-	//ScriptApp.newTrigger("follow").timeBased().everyHours(6).create();
+	ScriptApp.newTrigger("follow").timeBased().everyHours(6).create();
 	ScriptApp.newTrigger("fetchTweets").timeBased().everyMinutes(1).create();
-
+	ScriptApp.newTrigger("favorite").timeBased().everyMinutes(1).create();
 }
 
-function follow_followers_back()
-{
+//Automatically, read a hashtag and favorite tweets
+function favorite() {
+	oAuth();
+	
+	// 1- Initiate #hashtag search request
+	var options = {
+		"method": "get",
+		"oAuthServiceName":"twitter",
+		"oAuthUseToken":"always"
+	};
+	var phrase = ScriptProperties.getProperty("TWITTER_TARGET_HASHTAG");
+	var search = "https://api.twitter.com/1.1/search/tweets.json?count=1&include_entities=false&result_type=recent&q="; 
+	search = search + encodeString(phrase) + "&since_id=" + ScriptProperties.getProperty("MAX_TWITTER_ID");
+	Logger.log(search);	
+	
+	try {
+		var result = UrlFetchApp.fetch(search, options); 
+		if (result.getResponseCode() === 200) {
+			Logger.log("search result 200");
+			var data = Utilities.jsonParse(result.getContentText());
+			if (data) {
+				var tweets = data.statuses;
+				for (var i=tweets.length-1; i>=0; i--) {
+					
+					// 2- Inititate favorite request
+					var favorite_url = "https://api.twitter.com/1.1/favorites/create.json?id="+tweets[i].id_str;
+					Logger.log(favorite_url);
+					var options = {
+						"method": "post",
+						"oAuthServiceName":"twitter",
+						"oAuthUseToken":"always"
+					}
+					try {
+						var fav_result = UrlFetchApp.fetch(favorite_url, options); 
+						if (fav_result.getResponseCode() === 200) {
+							Logger.log("favorute result 200");
+						}
+					} 
+					catch (e) {	Logger.log(e.toString()); return false;}
+						
+				};
+			}
+		}
+	} 
+	catch (e) { Logger.log(e.toString());}
+}
+
+//Check for new followers and follow them back
+function follow_followers_back() {
 	oAuth();
 	//Get followers
 	var twitter_handle = ScriptProperties.getProperty("TWITTER_HANDLE");
@@ -47,11 +100,11 @@ function follow_followers_back()
 	follow_users(unique_followers,10)
 }
 
-function follow()
-{
+//Target a specific user's followers and follow them gradually
+function follow() {
   oAuth();
 	//Get other user followers
-	var twitter_handle = "Nejer";
+	var twitter_handle = ScriptProperties.getProperty("TWITTER_TARGET_HANDLE");
 	var handler_followers = get_followers(twitter_handle);
 	Logger.log("Finished getting target followers");
 	
@@ -65,13 +118,11 @@ function follow()
 	Logger.log("Finished uniquifying");
 	
 	//Do the follow within limit
-	follow_users(unique_followers,20)
+	follow_users(unique_followers,3)
 }
 
-
-//Follow a list
-function follow_users(array,limit)
-{
+//A list of twitter ID's is to be passed and a limit, the limit number of that array will be followed
+function follow_users(array,limit) {
 	var count = 0;
 	for(var i in array){
 		
@@ -97,8 +148,7 @@ function follow_users(array,limit)
 }
 
 //Get Followings of a user
-function get_followings(screen_name)
-{
+function get_followings(screen_name) {
 	var followers_url = "https://api.twitter.com/1.1/friends/ids.json?screen_name="+screen_name;
 	var followers;
 	var options = {
@@ -122,10 +172,8 @@ function get_followings(screen_name)
 	return followers;
 }
 
-
 //Get Followers of a user
-function get_followers(screen_name)
-{
+function get_followers(screen_name) {
 	var followers_url = "https://api.twitter.com/1.1/followers/ids.json?screen_name="+screen_name;
 	var followers;
 	var options = {
@@ -149,8 +197,7 @@ function get_followers(screen_name)
 	return followers;
 }
 
-
-//Get tweets from timeline
+//Get tweets from timeline and auto respond
 function fetchTweets() {
 	oAuth();
 	var twitter_handle = ScriptProperties.getProperty("TWITTER_HANDLE");
@@ -172,6 +219,8 @@ function fetchTweets() {
 				var tweets = data.statuses;
 				for (var i=tweets.length-1; i>=0; i--) {
 					var question = tweets[i].text.replace(new RegExp("\@" + twitter_handle, "ig"), "");
+                  question = question.replace(/[^\w\s]|_/g, "").replace(/\s+/g, " ")
+                  Logger.log("Question: "+question);
 					var answer = reverse(question);
 					sendReply(tweets[i].user.screen_name, tweets[i].id_str, answer);
 				}
@@ -181,12 +230,22 @@ function fetchTweets() {
 	catch (e) { Logger.log(e.toString());}
 }
 
+//Random function that prepares a response
+function prepare_answer(s) {
+	//    /(\w)\w*$/
+	
+	Logger.log(s.match(/^.*\s+(\w)\w+$/)[1]);
+  Logger.log(s.match(/([اأإآبتثجحخدذرزسشصضطظعغفقكلمنهويءئوةـىًٌٍَُِّ])[اأإآبتثجحخدذرزسشصضطظعغفقكلمنهويءئوةـىًٌٍَُِّ]*$/)[1]);
+	s = s.match(/^.*\s+(\w)\w+$/)[1];
+	return s + ", هاااااا؟ ;)";
+}
 
-
+//Random function that reverses a string
 function reverse(s){
 	return s.split("").reverse().join("");
 }
 
+//Send a reply to a tweet
 function sendReply(user, reply_id, tweet) {
 	var options = {
 		"method": "POST",
@@ -204,7 +263,6 @@ function sendReply(user, reply_id, tweet) {
 	}
 }
 
-
 //To authenticate requests
 function oAuth() {
 	var oauthConfig = UrlFetchApp.addOAuthService("twitter");
@@ -214,7 +272,6 @@ function oAuth() {
 	oauthConfig.setConsumerKey(ScriptProperties.getProperty("TWITTER_CONSUMER_KEY"));
 	oauthConfig.setConsumerSecret(ScriptProperties.getProperty("TWITTER_CONSUMER_SECRET"));
 }
-
 
 //Helper function to encode strings
 function encodeString (q) {
@@ -227,25 +284,34 @@ function encodeString (q) {
 	return str;
 }
 
+//Helper function to find differences between two arrays' items
 function array_diff (arr1) {
-		var retArr = {},
-		argl = arguments.length,
-		k1 = '',
-		i = 1,
-		k = '',
-		arr = {};
-		
-		arr1keys: for (k1 in arr1) {
-			for (i = 1; i < argl; i++) {
-				arr = arguments[i];
-				for (k in arr) {
-					if (arr[k] === arr1[k1]) {
-						// If it reaches here, it was found in at least one array, so try next value
-						continue arr1keys;
-					}
+	var retArr = {},
+	argl = arguments.length,
+	k1 = '',
+	i = 1,
+	k = '',
+	arr = {};
+	
+	arr1keys: for (k1 in arr1) {
+		for (i = 1; i < argl; i++) {
+			arr = arguments[i];
+			for (k in arr) {
+				if (arr[k] === arr1[k1]) {
+					// If it reaches here, it was found in at least one array, so try next value
+					continue arr1keys;
 				}
-				retArr[k1] = arr1[k1];
 			}
+			retArr[k1] = arr1[k1];
 		}
-		return retArr;
 	}
+	return retArr;
+}
+
+//To Stop and disable all triggers
+function stop(){
+  var triggers = ScriptApp.getScriptTriggers();
+	for(var i=0; i < triggers.length; i++) {
+		ScriptApp.deleteTrigger(triggers[i]);
+	}
+}
