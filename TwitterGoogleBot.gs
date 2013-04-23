@@ -5,8 +5,7 @@ function start() {
 	var TWITTER_CONSUMER_SECRET = "";
 	var TWITTER_HANDLE = "a5tabot";
 	var TWITTER_TARGET_HANDLE = "BuFai7an";
-	var TWITTER_TARGET_HASHTAG = "#خرب_هاشتاقهم";
-	var i = 0;
+	var TWITTER_TARGET_HASHTAG = "#مقصودة";
 	
 	// Be Careful changing anything below this line
 	ScriptProperties.setProperty("TWITTER_CONSUMER_KEY", TWITTER_CONSUMER_KEY);
@@ -17,63 +16,65 @@ function start() {
 	ScriptProperties.setProperty("MAX_TWITTER_ID", 0);
 	
 	// Delete exiting triggers, if any
-	var triggers = ScriptApp.getScriptTriggers();
-	for (i; i < triggers.length; i++) {
-		ScriptApp.deleteTrigger(triggers[i]);
-	}
+	reset_triggers();
 	
 	//Add a trigger
 	ScriptApp.newTrigger("follow_followers_back").timeBased().everyMinutes(1).create();
 	ScriptApp.newTrigger("follow").timeBased().everyHours(6).create();
 	ScriptApp.newTrigger("fetchTweets").timeBased().everyMinutes(1).create();
-	ScriptApp.newTrigger("favorite").timeBased().everyMinutes(1).create();
+	ScriptApp.newTrigger("favorite").timeBased().everyMinutes(5).create();
+}
+
+function unfollow_inactive_followings()
+{
+	//Check people you follow
+	//Get following
+	var my_id = ScriptProperties.getProperty("TWITTER_HANDLE");
+	var my_followings = get_followings(my_id);
+	Logger.log("Finished getting followings");
+}
+
+//Function to do requests
+function do_request(url,method)
+{
+	var options = {
+		"method": method,
+		"oAuthServiceName":"twitter",
+		"oAuthUseToken":"always"
+	};
+	Logger.log("Trying: " + url);
+	try {
+		var result = UrlFetchApp.fetch(url, options); 
+		if (result.getResponseCode() === 200) {
+			Logger.log("Result 200");
+			var data = Utilities.jsonParse(result.getContentText());
+			return data;
+		}
+		else {
+			Logger.log("Result failed");
+			return false;
+		}
+	} 
+	catch (e) {	Logger.log(e.toString()); return false;}	
 }
 
 //Automatically, read a hashtag and favorite tweets
 function favorite() {
 	oAuth();
-	
 	// 1- Initiate #hashtag search request
-	var options = {
-		"method": "get",
-		"oAuthServiceName":"twitter",
-		"oAuthUseToken":"always"
-	};
 	var phrase = ScriptProperties.getProperty("TWITTER_TARGET_HASHTAG");
 	var search = "https://api.twitter.com/1.1/search/tweets.json?count=1&include_entities=false&result_type=recent&q="; 
 	search = search + encodeString(phrase) + "&since_id=" + ScriptProperties.getProperty("MAX_TWITTER_ID");
-	Logger.log(search);	
 	
-	try {
-		var result = UrlFetchApp.fetch(search, options); 
-		if (result.getResponseCode() === 200) {
-			Logger.log("search result 200");
-			var data = Utilities.jsonParse(result.getContentText());
-			if (data) {
-				var tweets = data.statuses;
-				for (var i=tweets.length-1; i>=0; i--) {
-					
-					// 2- Inititate favorite request
-					var favorite_url = "https://api.twitter.com/1.1/favorites/create.json?id="+tweets[i].id_str;
-					Logger.log(favorite_url);
-					var options = {
-						"method": "post",
-						"oAuthServiceName":"twitter",
-						"oAuthUseToken":"always"
-					}
-					try {
-						var fav_result = UrlFetchApp.fetch(favorite_url, options); 
-						if (fav_result.getResponseCode() === 200) {
-							Logger.log("favorute result 200");
-						}
-					} 
-					catch (e) {	Logger.log(e.toString()); return false;}
-						
-				};
-			}
+	var data = do_request(search,"get");
+
+	if (data) {
+		var tweets = data.statuses;
+		for (var i=tweets.length-1; i>=0; i--) {
+			// 2- Inititate favorite request
+			var fav_data = do_request("https://api.twitter.com/1.1/favorites/create.json?id="+tweets[i].id_str,"POST");
 		}
-	} 
-	catch (e) { Logger.log(e.toString());}
+	}
 }
 
 //Check for new followers and follow them back
@@ -82,12 +83,10 @@ function follow_followers_back() {
 	//Get followers
 	var twitter_handle = ScriptProperties.getProperty("TWITTER_HANDLE");
 	var handler_followers = get_followers(twitter_handle);
-	Logger.log("Finished getting target followers");
 	
 	//Get following
 	var my_id = ScriptProperties.getProperty("TWITTER_HANDLE");
 	var my_followings = get_followings(my_id);
-	Logger.log("Finished getting followings");
 	
 	if(handler_followers == false || my_followings == false){
 		return;
@@ -106,95 +105,57 @@ function follow() {
 	//Get other user followers
 	var twitter_handle = ScriptProperties.getProperty("TWITTER_TARGET_HANDLE");
 	var handler_followers = get_followers(twitter_handle);
-	Logger.log("Finished getting target followers");
 	
 	//Get People I'm following
 	var my_id = ScriptProperties.getProperty("TWITTER_HANDLE");
 	var my_followers = get_followings(my_id);
-	Logger.log("Finished getting followings");
 	
 	//Filter the subject followers list deleting the people i already follow
 	var unique_followers = array_diff(handler_followers,my_followers);
 	Logger.log("Finished uniquifying");
 	
 	//Do the follow within limit
-	follow_users(unique_followers,3)
+	follow_users(unique_followers,3);
 }
 
 //A list of twitter ID's is to be passed and a limit, the limit number of that array will be followed
 function follow_users(array,limit) {
 	var count = 0;
+	
 	for(var i in array){
-		
-      if (count >= limit-1){
-			break;
-		}
+		if (count >= limit-1){break;}
 		count++;
-		
-		var follow_url = "https://api.twitter.com/1.1/friendships/create.json?user_id="+array[i].toString();
-      
-		var options ={
-			"method": "post",
-			"oAuthServiceName":"twitter",
-			"oAuthUseToken":"always"
-		};
-		try {
-			var follow_result = UrlFetchApp.fetch(follow_url, options);
-		} 
-		catch (e) {	Logger.log(e.toString());}
+		var data = do_request("https://api.twitter.com/1.1/friendships/create.json?user_id="+array[i].toString(),"POST");
 	}
 	Logger.log("Finished following");
-	//return follow_result;
 }
+
+
 
 //Get Followings of a user
 function get_followings(screen_name) {
-	var followers_url = "https://api.twitter.com/1.1/friends/ids.json?screen_name="+screen_name;
-	var followers;
-	var options = {
-		"method": "get",
-		"oAuthServiceName":"twitter",
-		"oAuthUseToken":"always"
-	};
-	//Execute
-	try {
-		var result = UrlFetchApp.fetch(followers_url, options); 
-		if (result.getResponseCode() === 200) {
-			Logger.log("result 200");
-			var data = Utilities.jsonParse(result.getContentText());
-			if (data) {
-				followers = data.ids;
-			}
-		}
-	} 
-	catch (e) {	Logger.log(e.toString()); return false;}
 	
-	return followers;
+	var data = do_request("https://api.twitter.com/1.1/friends/ids.json?screen_name="+screen_name,"get");
+	var followings;
+	if (data) {
+		followings = data.ids;
+		return followings;
+	}
+	else {return false;}
+	Logger.log("Finished getting followings");	
 }
 
 //Get Followers of a user
 function get_followers(screen_name) {
-	var followers_url = "https://api.twitter.com/1.1/followers/ids.json?screen_name="+screen_name;
-	var followers;
-	var options = {
-		"method": "get",
-		"oAuthServiceName":"twitter",
-		"oAuthUseToken":"always"
-	};
-	//Execute
-	try {
-		var result = UrlFetchApp.fetch(followers_url, options); 
-		if (result.getResponseCode() === 200) {
-			Logger.log("result 200");
-			var data = Utilities.jsonParse(result.getContentText());
-			if (data) {
-				followers = data.ids;
-			}
-		}
-	} 
-	catch (e) {	Logger.log(e.toString());return false;}
 	
-	return followers;
+	var data = do_request("https://api.twitter.com/1.1/followers/ids.json?screen_name="+screen_name,"get");
+	var followers;
+	if (data) {
+		followers = data.ids;
+		return followers;
+	}
+	else {return false;}
+	Logger.log("Finished getting target followers");	
 }
 
 //Get tweets from timeline and auto respond
@@ -204,30 +165,18 @@ function fetchTweets() {
 	var phrase = "to:" + twitter_handle; // English languate tweets sent to @labnol
 	var search = "https://api.twitter.com/1.1/search/tweets.json?count=5&include_entities=false&result_type=recent&q="; 
 	search = search + encodeString(phrase) + "&since_id=" + ScriptProperties.getProperty("MAX_TWITTER_ID"); 
-	var options = {
-		"method": "get",
-		"oAuthServiceName":"twitter",
-		"oAuthUseToken":"always"
-	};
-   
-	try {
-		var result = UrlFetchApp.fetch(search, options); 
-		if (result.getResponseCode() === 200) {
-          Logger.log("result 200");
-			var data = Utilities.jsonParse(result.getContentText());
-			if (data) {
-				var tweets = data.statuses;
-				for (var i=tweets.length-1; i>=0; i--) {
-					var question = tweets[i].text.replace(new RegExp("\@" + twitter_handle, "ig"), "");
-                  question = question.replace(/[^\w\s]|_/g, "").replace(/\s+/g, " ")
-                  Logger.log("Question: "+question);
-					var answer = reverse(question);
-					sendReply(tweets[i].user.screen_name, tweets[i].id_str, answer);
-				}
-			}
+	
+	var data = do_request(search,"get");
+	if (data) {
+		var tweets = data.statuses;
+		for (var i=tweets.length-1; i>=0; i--) {
+			var question = tweets[i].text.replace(new RegExp("\@" + twitter_handle, "ig"), "");
+			question = question.replace(/[^\w\s]|_/g, "").replace(/\s+/g, " ")
+			Logger.log("Question: "+question);
+			var answer = reverse(question);
+			sendReply(tweets[i].user.screen_name, tweets[i].id_str, answer);
 		}
-	} 
-	catch (e) { Logger.log(e.toString());}
+	}
 }
 
 //Random function that prepares a response
@@ -235,7 +184,7 @@ function prepare_answer(s) {
 	//    /(\w)\w*$/
 	
 	Logger.log(s.match(/^.*\s+(\w)\w+$/)[1]);
-  Logger.log(s.match(/([اأإآبتثجحخدذرزسشصضطظعغفقكلمنهويءئوةـىًٌٍَُِّ])[اأإآبتثجحخدذرزسشصضطظعغفقكلمنهويءئوةـىًٌٍَُِّ]*$/)[1]);
+	Logger.log(s.match(/([اأإآبتثجحخدذرزسشصضطظعغفقكلمنهويءئوةـىًٌٍَُِّ])[اأإآبتثجحخدذرزسشصضطظعغفقكلمنهويءئوةـىًٌٍَُِّ]*$/)[1]);
 	s = s.match(/^.*\s+(\w)\w+$/)[1];
 	return s + ", هاااااا؟ ;)";
 }
@@ -247,19 +196,11 @@ function reverse(s){
 
 //Send a reply to a tweet
 function sendReply(user, reply_id, tweet) {
-	var options = {
-		"method": "POST",
-		"oAuthServiceName":"twitter",
-		"oAuthUseToken":"always" 
-	};
-	var status = "https://api.twitter.com/1.1/statuses/update.json?status=" + encodeString("@" + user + " " + tweet)+ "&in_reply_to_status_id=" + reply_id; 
-	try {
-		var result = UrlFetchApp.fetch(status, options);
+	var status = "https://api.twitter.com/1.1/statuses/update.json?status=" + encodeString("@" + user + " " + tweet)+ "&in_reply_to_status_id=" + reply_id;
+	var data = do_request(status,"POST");
+	if(data) {
 		ScriptProperties.setProperty("MAX_TWITTER_ID", reply_id);
 		Logger.log(result.getContentText()); 
-	} 
-	catch (e) {
-		Logger.log(e.toString());
 	}
 }
 
@@ -309,7 +250,7 @@ function array_diff (arr1) {
 }
 
 //To Stop and disable all triggers
-function stop(){
+function reset_triggers(){
   var triggers = ScriptApp.getScriptTriggers();
 	for(var i=0; i < triggers.length; i++) {
 		ScriptApp.deleteTrigger(triggers[i]);
