@@ -1,8 +1,8 @@
 //This is the main function that will define global variables and reset Google triggers that will run the other functions
 function start() {
 	// REPLACE THESE DUMMY VALUES
-	var TWITTER_CONSUMER_KEY = "9aii49G08ZCTULeqPJqF3JkdZ";
-	var TWITTER_CONSUMER_SECRET = "N47DwhmeDhZqeBnX5Q8tePdMjYI0hU1fL63vBCDnJm8ojmLbtW";
+	var TWITTER_CONSUMER_KEY = "";
+	var TWITTER_CONSUMER_SECRET = "";
 	var TWITTER_HANDLE = "A5taBot";
 	var TWITTER_TARGET_HANDLE = "Nejer";
 	var TWITTER_TARGET_HASHTAG = "#أقطع_علاقتي_فيك_إذ";
